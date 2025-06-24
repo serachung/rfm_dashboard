@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+gspread
+google-auth
+requests
+python-dotenv
+matplotlib
+seaborn
+tabulate
