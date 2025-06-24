@@ -1,20 +1,32 @@
 import pandas as pd
 import requests
+import os
+import json
+import gspread
+from google.oauth2 import service_account
+from pathlib import Path
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import os
-import gspread
-from google.oauth2.service_account import Credentials
-from pathlib import Path
+
 
 # ✅ Load environment variables
 load_dotenv(dotenv_path=Path("config/.env"))
 
-# ✅ Google Sheets auth
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-creds = Credentials.from_service_account_file(
-    os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=SCOPES
-)
+# ✅ Google Sheets authimport os
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
+    creds = service_account.Credentials.from_service_account_file(
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
+        scopes=SCOPES
+    )
+else:
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
+        scopes=SCOPES
+    )
+
 gc = gspread.authorize(creds)
 
 # ✅ Open the Google Sheet
