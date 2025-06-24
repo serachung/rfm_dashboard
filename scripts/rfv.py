@@ -11,9 +11,18 @@ from scripts.utils import clean_phone_number, suggested_message
 load_dotenv(dotenv_path=Path("config/.env"))
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-creds = Credentials.from_service_account_file(
-    os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=SCOPES
-)
+
+if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
+    creds = service_account.Credentials.from_service_account_file(
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
+        scopes=SCOPES
+    )
+else:
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
+        scopes=SCOPES
+    )
+
 gc = gspread.authorize(creds)
 
 sheet = gc.open_by_url(os.getenv("GOOGLE_SHEET_URL"))

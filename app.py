@@ -13,6 +13,17 @@ from scripts.data_pipeline import update_data
 from scripts.rfv import run_rfv
 import re
 
+import streamlit as st
+
+st.title("🔐 Login")
+
+password = st.text_input("Password", type="password")
+if password != st.secrets["APP_PASSWORD"]:
+    st.error("❌ Incorrect password")
+    st.stop()
+
+st.success("✅ Access granted!")
+
 
 # ✅ Load environment
 load_dotenv(dotenv_path=Path("config/.env"))
@@ -24,9 +35,18 @@ st.title("📱 RFV WhatsApp Dashboard")
 
 # ✅ Google Sheets Authentication
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-creds = Credentials.from_service_account_file(
-    os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=SCOPES
-)
+
+if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
+    creds = service_account.Credentials.from_service_account_file(
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
+        scopes=SCOPES
+    )
+else:
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
+        scopes=SCOPES
+    )
+
 gc = gspread.authorize(creds)
 sheet = gc.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
 
