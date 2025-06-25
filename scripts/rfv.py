@@ -3,7 +3,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 import gspread
-from google.oauth2.service_account import Credentials
+import json
+from google.oauth2 import service_account
 from pathlib import Path
 from scripts.utils import clean_phone_number, suggested_message
 

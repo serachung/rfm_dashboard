@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from dotenv import load_dotenv
 import gspread
-from google.oauth2.service_account import Credentials
+import json
+from google.oauth2 import service_account
 import os
 from pathlib import Path
 from io import BytesIO
