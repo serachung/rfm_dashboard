@@ -9,3 +9,7 @@ matplotlib
 seaborn
 tabulate
 openpyxl
+streamlit-aggrid
+Pillow
+plotly
+gspread-dataframe

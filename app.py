@@ -1,391 +1,276 @@
-# Updated app.py
-
-import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from dotenv import load_dotenv
-import gspread
-import json
-from google.oauth2 import service_account
-import os
-from pathlib import Path
-from io import BytesIO
-from scripts.data_pipeline import update_data
-from scripts.rfv import run_rfv
-import re
-
 import streamlit as st
+import plotly.express as px
 
-st.title("🔐 Login")
+from dotenv import load_dotenv
+from pathlib import Path
+from datetime import datetime
+from gspread_dataframe import set_with_dataframe
+from scripts.data_pipeline import generate_and_save_snapshot, update_data, get_google_sheet
+from scripts.utils import get_seller_names, to_excel,relative_date
 
-password = st.text_input("Password", type="password")
-if password != st.secrets["APP_PASSWORD"]:
-    st.error("❌ Incorrect password")
-    st.stop()
-
-st.success("✅ Access granted!")
+# Page config
+st.set_page_config(page_title="RFV WhatsApp", layout="wide")
+st.title("📦 RFV Snapshot - Incentive")
 
 
 # ✅ Load environment
 load_dotenv(dotenv_path=Path("config/.env"))
 
-st.set_page_config(page_title="RFV WhatsApp", layout="centered")
+# ✅ Login
+st.title("🔐 Login")
+password = st.text_input("Senha", type="password")
+if password != st.secrets["APP_PASSWORD"]:
+    st.error("❌ Acesso negado - insira a senha")
+    st.stop()
+st.success("✅ Acesso liberado!")
 
-st.title("📱 RFV WhatsApp Dashboard")
+# ✅ Session state setup
+if "snapshot_df" not in st.session_state:
+    st.session_state.snapshot_df = pd.DataFrame()
 
+if "pagination" not in st.session_state:
+    st.session_state.pagination = {}
 
-# ✅ Google Sheets Authentication
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+PAGE_SIZE = 10
 
-if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
-    creds = service_account.Credentials.from_service_account_file(
-        os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
-        scopes=SCOPES
-    )
-else:
-    creds = service_account.Credentials.from_service_account_info(
-        json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
-        scopes=SCOPES
-    )
+today = datetime.today()
+snapshot_day = (datetime.today().replace(day=1) - pd.Timedelta(days=1)).date()
+snapshot_title = f"rfm_snapshot_{snapshot_day:%Y_%m_%d}"
 
-gc = gspread.authorize(creds)
-sheet = gc.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
-
-
-# ✅ Load RFM Data
-@st.cache_data
-def load_rfm_data():
+if st.session_state.snapshot_df.empty:
     try:
-        ws = sheet.worksheet("RFM")
-    except:
-        st.warning("❌ 'RFM' worksheet not found. Run RFV calculation first.")
-        return pd.DataFrame()
+        sheet = get_google_sheet()  
+        ws = sheet.worksheet(snapshot_title)
+        df = pd.DataFrame(ws.get_all_records())
+        st.session_state.snapshot_df = df
+        st.success(f"✅ RFM DO DIA {snapshot_day:%d-%m-%Y} CARREGADA COM SUCESSO")
 
-    data = pd.DataFrame(ws.get_all_records())
-    
-    # ✅ Apply base business rule filters
-    data = data[
-        (data['cliente'].str.upper() != 'CONSUMIDOR') &
-        (data['cnpj'].astype(str).str.strip() != '1')
-    ]
+    except Exception as e:
+        st.warning(f"⚠️ Snapshot do mês ainda não existe. Gere manualmente. Erro: {e}")
 
-    if not data.empty:
-        data.columns = [c.lower().strip() for c in data.columns]
-        data['recency'] = pd.to_numeric(data['recency'], errors='coerce')
-        data['frequency'] = pd.to_numeric(data['frequency'], errors='coerce')
-        data['value'] = pd.to_numeric(data['value'], errors='coerce')
-
-    return data
-
-
-# ✅ WhatsApp Validation Function
-def is_valid_whatsapp(number):
-    if pd.isna(number):
-        return False
-    number = str(number).strip()
-    pattern = r'^55\d{2}9\d{8}$'
-    return bool(re.match(pattern, number))
-
-
-# ✅ Excel Export Function
-def to_excel(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='RFV')
-    processed_data = output.getvalue()
-    return processed_data
-
-
-# ✅ Operations Buttons
-st.subheader("⚙️ Operações")
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("🔄 Atualizar Dados"):
-        update_data()
-        st.success("✅ Dados atualizados com sucesso!")
-
-with col2:
-    if st.button("🚀 Calcular RFV"):
-        run_rfv()
-        st.success("✅ RFV calculado com sucesso!")
-
-
-# ✅ Load data
-data = load_rfm_data()
-
-if data.empty:
-    st.warning("⚠️ A aba 'RFM' está vazia. Rode 'Calcular RFV'.")
-    st.stop()
-
-if 'seller' not in data.columns:
-    st.error("❌ A coluna 'seller' não existe na aba 'RFM'. Rode 'Calcular RFV'.")
-    st.stop()
-
-
-# ✅ Seller Filter
-sellers = ["Todas"] + sorted(data["seller"].dropna().unique())
-selected_seller = st.selectbox("Vendedora:", sellers)
-
-if selected_seller != "Todas":
-    data = data[data["seller"] == selected_seller]
-
-
-# ✅ WhatsApp Toggle Filter
-filter_whatsapp = st.checkbox(
-    "❌ Ocultar clientes sem WhatsApp válido",
-    value=False
-)
-
-if filter_whatsapp:
-    data = data[data['whatsapp'].apply(is_valid_whatsapp)]
-    data['whatsapp_link'] = data['whatsapp'].apply(lambda x: f"https://wa.me/{x}")
+        with st.expander("⚙️ Operações Manuais", expanded=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Atualizar pedidos e clientes"):
+                    with st.spinner("🔄 Atualizando dados..."):
+                        update_data()
+                    st.success("✅ Dados atualizados com sucesso.")
+            with col2:
+                if st.button("📊 Gerar snapshot manual"):
+                    with st.spinner("📊 Gerando snapshot mensal..."):
+                        df = generate_and_save_snapshot()
+                        st.session_state.snapshot_df = df
+                    st.success("✅ Snapshot gerado com sucesso.")
+        st.stop()
 else:
-    data['whatsapp_link'] = data['whatsapp'].apply(
-        lambda x: f"https://wa.me/{x}" if pd.notna(x) and str(x).strip() != "" else ""
-    )
+    df = st.session_state.snapshot_df
+    # 🚫 Excluir NUVEMSHOP e CNPJ = 1
+    df = df[(df["seller_name"] != "NUVEMSHOP") & (df["cnpj"] != 1)]
+
+active_sellers, inactive_sellers = get_seller_names()
+seller_options = ["Todas"] + active_sellers + (["Sem vendedora"] if inactive_sellers else ["Sem vendedora"])
+selected_seller = st.selectbox("Filtrar por vendedora:", seller_options)
+
+if selected_seller == "Sem vendedora":
+    df = df[~df["seller_name"].isin(active_sellers)]
+elif selected_seller != "Todas":
+    df = df[df["seller_name"] == selected_seller]
+
+df = df[df["cnpj"].notna()]
+df = df[df["value"] > 0]
+
+st.subheader("📨 Marcação de mensagens por segmento")
+rfv_groups = {
+    "🏆 Campeões de vendas": ["Campeões", "Leais"],
+    "🔄 Potenciais vendas": ["Potenciais Leais", "Recentes", "Promissores", "Precisam Atenção", "Não pode perdê-los"],
+    "⚠️ Atenção": ["Em risco", "Prestes a dormir", "Hibernando"],
+    "❄️ Perdidos": ["Perdidos"]
+}
+
+updated_rows = []
+
+for title, segments in rfv_groups.items():
+    group_df = df[df["m0_rfm"].isin(segments)].copy()
+    group_df["original_index"] = group_df.index
+    group_df = group_df.sort_values(by="last_purchase_date", ascending=False)
+    total_rows = len(group_df)
+    max_page = (total_rows - 1) // PAGE_SIZE
+    page_key = f"page_{title}"
+    if page_key not in st.session_state.pagination:
+        st.session_state.pagination[page_key] = 0
+
+    with st.expander(f"{title}", expanded=True):
+        st.markdown(f"({total_rows} clientes)")
+
+        current_page = st.session_state.pagination[page_key]
+        start = current_page * PAGE_SIZE
+        end = start + PAGE_SIZE
+        paginated_df = group_df.iloc[start:end]
+
+        edited_df = paginated_df.copy() # Paginate
+        edited_df["Enviado?"] = edited_df["message_sent"]  # Default unchecked
+
+        # Format value to "1.250" instead of "1,250.00"
+        edited_df["Valor (R$)"] = edited_df["value"].apply(lambda v: f"R$ {int(round(v)):,}".replace(",", "."))
+
+        # Convert to datetime if not already
+        edited_df["first_purchase_date"] = pd.to_datetime(edited_df["first_purchase_date"], errors="coerce")
+        edited_df["last_purchase_date"] = pd.to_datetime(edited_df["last_purchase_date"], errors="coerce")
+        edited_df["1ª compra"] = edited_df["first_purchase_date"].apply(relative_date)
+        edited_df["Última compra"] = edited_df["last_purchase_date"].apply(relative_date)
+
+        # Check all toggle
+        check_all = st.checkbox("✔️ Selecionar todos os 10", key=f"check_all_{title}")
+        if check_all:
+            edited_df["message_sent"] = True
+
+        # Change display name
+        edited_df_display = edited_df[[
+            "name", "cnpj", "seller_name", "recency", "frequency", "Valor (R$)",
+            "1ª compra", "Última compra", "m0_rfm", "m1_rfm", "Enviado?"
+        ]].rename(columns={
+            "name": "Cliente", "cnpj": "CNPJ", "seller_name": "Vendedora",
+            "recency": "Recência", "frequency": "Frequência",
+            "m0_rfm": "RFM atual", "m1_rfm": "RFM (M-1)","message_sent":"Enviado?"
+        })
+
+        # COLUMNS TO SHOW
+        edited_df_display = st.data_editor(
+            edited_df_display,
+            key=f"editor_{title}",
+            use_container_width=True,
+            hide_index=True,
+            num_rows="dynamic",
+            column_order=[
+                "Cliente", "CNPJ", "Vendedora", "Recência", "Frequência", "Valor (R$)",
+                "1ª compra", "Última compra", "Snapshot", "RFM Mês 0", "RFM Mês 1", "Enviado?"
+            ]
+        )
+        edited_with_cnpj = edited_df_display.merge(
+            paginated_df[["cnpj", "original_index"]],
+            how="left",
+            left_on="CNPJ",
+            right_on="cnpj"
+        )
+
+        for _, row in edited_with_cnpj.iterrows():
+            if row["Enviado?"]:
+                updated_rows.append((row["original_index"], True))
+
+        col1, col2 = st.columns([1, 6])
+        with col1:
+            if current_page > 0:
+                if st.button("⬅️ Anterior", key=f"prev_{title}"):
+                    st.session_state.pagination[page_key] -= 1
+        with col2:
+            if current_page < max_page:
+                if st.button("Próximo ➡️", key=f"next_{title}"):
+                    st.session_state.pagination[page_key] += 1
 
 
-# ✅ Show total count
-if filter_whatsapp:
-    st.markdown(f"**👥 Total de clientes com WhatsApp válido: {len(data)}**")
-else:
-    st.markdown(f"**👥 Total de clientes (todos): {len(data)}**")
+# SAVE CHECKS TO GOOGLE SHEETS
+if updated_rows:
+    if st.button("📅 Salvar marcações de mensagem"):
+        for idx, is_checked in updated_rows:
+            df.at[idx, "message_sent"] = is_checked
 
+        try:
+            sheet = get_google_sheet()
+            ws = sheet.worksheet(snapshot_title)
+            set_with_dataframe(ws, df)
+            st.success("✅ Marcações salvas e sincronizadas com o Google Sheet!")
+        except Exception as e:
+            st.error(f"❌ Erro ao salvar no Google Sheet: {e}")
 
-# ✅ Display Table
-st.subheader("📋 Lista de Clientes")
-st.dataframe(data[[ 
-    "cliente", "cnpj", "whatsapp_link", 
-    "recency", "frequency", "value", 
-    "rfv_segment", "mensagem"
-]])
+rfm_order = [
+    "Campeões", "Leais", "Potenciais Leais", "Recentes", "Promissores",
+    "Precisam Atenção", "Não pode perdê-los", "Em risco", 
+    "Prestes a dormir", "Hibernando", "Perdidos"
+]
+segment_counts = df['m0_rfm'].value_counts().reindex(rfm_order).fillna(0).astype(int)
+df_plot = pd.DataFrame({
+    "Segmento": segment_counts.index,
+    "Clientes": segment_counts.values
+})
+df_plot["% do total"] = (df_plot["Clientes"] / df_plot["Clientes"].sum() * 100).round(0)
 
-
-# ✅ Summary Table
-st.subheader("📊 Resumo por Classificação RFV")
-summary = data['rfv_segment'].value_counts().reset_index()
-summary.columns = ["Classificação", "Quantidade"]
-st.table(summary)
-
-
-# ✅ RFM Heatmap
-st.subheader("🔥 RFM Grid (Heatmap)")
-
-def recency_bucket(r):
-    if r <= 30:
-        return '≤30 dias'
-    elif r <= 60:
-        return '31-60 dias'
-    elif r <= 120:
-        return '61-120 dias'
-    elif r <= 180:
-        return '121-180 dias'
-    elif r <= 360:
-        return '181-360 dias'
-    else:
-        return '>360 dias'
-
-def frequency_bucket(f):
-    if f == 1:
-        return '1'
-    elif 2 <= f <= 9:
-        return '2-9'
-    else:
-        return '10+'
-
-
-data['recency_group'] = data['recency'].apply(recency_bucket)
-data['frequency_group'] = data['frequency'].apply(frequency_bucket)
-
-rfm_grid = pd.pivot_table(
-    data, index='recency_group', columns='frequency_group',
-    values='cnpj', aggfunc='count', fill_value=0
-).reindex(index=['≤30 dias', '31-60 dias', '61-120 dias', '121-180 dias', '181-360 dias', '>360 dias'])
-
-st.dataframe(rfm_grid)
-
-plt.figure(figsize=(8, 6))
-sns.heatmap(
-    rfm_grid.fillna(0).astype(int),
-    annot=True, fmt='d', cmap="YlGnBu"
+fig = px.bar(
+    df_plot,
+    x="Segmento",
+    y="Clientes",
+    color="Segmento",
+    text="% do total",
+    color_discrete_sequence=px.colors.qualitative.Safe,
+    labels={"Clientes": "Nº de Clientes"},
+    title="📊 Nº de Clientes por Segmento RFM"
 )
-plt.title("RFM Grid Heatmap")
-st.pyplot(plt.gcf())
-plt.clf()
+fig.update_traces(texttemplate='%{text}%', textposition='outside')
+fig.update_layout(
+    xaxis_tickangle=-45,
+    yaxis=dict(showgrid=True, gridcolor="lightgrey"),
+    plot_bgcolor='white',
+    showlegend=False
+)
+st.plotly_chart(fig, use_container_width=True)
 
-
-# ✅ Export buttons
-st.subheader("⬇️ Exportar Dados")
+st.subheader("⬇️ Exportar")
 st.download_button(
     label="📥 Baixar CSV",
-    data=data.to_csv(index=False).encode('utf-8'),
-    file_name='rfv_clientes.csv',
-    mime='text/csv'
+    data=df.to_csv(index=False),
+    file_name="rfv_clientes.csv",
+    mime="text/csv",
+    key="csv_download_button"
 )
 
 st.download_button(
     label="📥 Baixar Excel",
-    data=to_excel(data),
-    file_name='rfv_clientes.xlsx',
-    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    data=to_excel(df),
+    file_name="rfv_clientes.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    key="excel_download_button"
 )
 
 
-# ✅ Simple Styling for Mobile
-st.markdown(
-    """
-    <style>
-    table {
-        font-size: 12px;
-    }
-    .stButton button {
-        padding: 0.3rem 1rem;
-    }
-    .stDataFrame div {
-        font-size: 12px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
-# import streamlit as st
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-# from scripts.data_pipeline import update_data
-# from scripts.rfv import run_rfv
-# from dotenv import load_dotenv
-# import gspread
-# from google.oauth2.service_account import Credentials
-# import os
-# from pathlib import Path
+# 🔗 Link to open the Google Sheet (styled like a button)
+try:
+    sheet = get_google_sheet()
+    sheet_url = sheet.url
 
-# load_dotenv(dotenv_path=Path("config/.env"))
+    st.markdown(
+        f"""
+        <a href="{sheet_url}" target="_blank">
+            <button style="
+                background-color: #4CAF50;
+                color: white;
+                padding: 0.5em 1.5em;
+                border: none;
+                border-radius: 4px;
+                font-size: 16px;
+                cursor: pointer;
+                margin-top: 1em;
+            ">
+                📄 Abrir no Google Sheets
+            </button>
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
 
-# st.set_page_config(page_title="RFV WhatsApp Dashboard", layout="wide")
-# st.title("📊 RFV WhatsApp Dashboard")
-
-# SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-# creds = Credentials.from_service_account_file(
-#     os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=SCOPES
-# )
-# gc = gspread.authorize(creds)
-# sheet = gc.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
-
-# @st.cache_data
-# def load_rfm_data():
-#     try:
-#         ws = sheet.worksheet("RFM")
-#     except:
-#         st.warning("❌ 'RFM' worksheet not found. Run RFV calculation first.")
-#         return pd.DataFrame()
-
-#     data = pd.DataFrame(ws.get_all_records())
-
-#     if not data.empty:
-#         data.columns = [c.lower().strip() for c in data.columns]
-#         data['recency'] = pd.to_numeric(data['recency'], errors='coerce')
-#         data['frequency'] = pd.to_numeric(data['frequency'], errors='coerce')
-#         data['value'] = pd.to_numeric(data['value'], errors='coerce')
-
-#     return data
+except Exception as e:
+    st.warning(f"⚠️ Não foi possível gerar o link do Google Sheet: {e}")
 
 
-# with st.sidebar:
-#     st.header("⚙️ Operações")
-#     if st.button("🔄 Atualizar Pedidos e Clientes"):
-#         update_data()
-#         st.success("✅ Dados atualizados com sucesso!")
 
-#     if st.button("🚀 Calcular RFV"):
-#         run_rfv()
-#         st.success("✅ RFV calculado e salvo com sucesso!")
 
-# data = load_rfm_data()
 
-# if data.empty:
-#     st.warning("⚠️ A aba 'RFM' está vazia. Rode 'Calcular RFV'.")
-#     st.stop()
 
-# if 'seller' not in data.columns:
-#     st.error("❌ A coluna 'seller' não existe na aba 'RFM'. Rode 'Calcular RFV'.")
-#     st.stop()
 
-# sellers = ["Todas"] + sorted(data["seller"].dropna().unique())
-# selected_seller = st.sidebar.selectbox("Filtrar por Vendedora:", sellers)
 
-# if selected_seller != "Todas":
-#     data = data[data["seller"] == selected_seller]
 
-# # ✅ WhatsApp Clickable Link for UI
-# data['whatsapp_click'] = data['whatsapp'].apply(
-#     lambda x: f"[Abrir WhatsApp](https://wa.me/55{x})" if pd.notnull(x) and x != "" else ""
-# )
 
-# st.subheader("📋 Lista de Clientes com Classificação RFV e WhatsApp")
-# st.markdown(
-#     data[[
-#         "seller", "cliente", "cnpj", "whatsapp", "whatsapp_click",
-#         "recency", "frequency", "value",
-#         "rfv_segment", "mensagem", "snapshot_date"
-#     ]].to_markdown(index=False),
-#     unsafe_allow_html=True
-# )
 
-# # ✅ RFV Summary
-# st.subheader("🔢 Resumo por Classificação RFV")
-# summary = data['rfv_segment'].value_counts().reset_index()
-# summary.columns = ["Classificação", "Quantidade"]
-# st.table(summary)
-
-# # ✅ RFM Grid (Pivot Table)
-# st.subheader("📊 RFM Grid (Tabela)")
-
-# def recency_bucket(r):
-#     if r <= 30:
-#         return '≤30 dias'
-#     elif r <= 60:
-#         return '31-60 dias'
-#     elif r <= 120:
-#         return '61-120 dias'
-#     elif r <= 180:
-#         return '121-180 dias'
-#     elif r <= 360:
-#         return '181-360 dias'
-#     else:
-#         return '>360 dias'
-
-# def frequency_bucket(f):
-#     if f == 1:
-#         return '1'
-#     elif 2 <= f <= 9:
-#         return '2-9'
-#     else:
-#         return '10+'
-
-# data['recency_group'] = data['recency'].apply(recency_bucket)
-# data['frequency_group'] = data['frequency'].apply(frequency_bucket)
-
-# rfm_grid = pd.pivot_table(
-#     data, index='recency_group', columns='frequency_group',
-#     values='cnpj', aggfunc='count', fill_value=0
-# ).reindex(index=['≤30 dias', '31-60 dias', '61-120 dias', '121-180 dias', '181-360 dias', '>360 dias'])
-
-# st.dataframe(rfm_grid)
-
-# # ✅ Heatmap
-# st.subheader("🔥 RFM Grid (Heatmap)")
-
-# plt.figure(figsize=(8, 6))
-# sns.heatmap(
-#     rfm_grid.fillna(0).astype(int),
-#     annot=True, fmt='d', cmap="YlGnBu"
-# )
-# plt.title("RFM Grid Heatmap")
-# st.pyplot(plt.gcf())
-# plt.clf()

@@ -111,10 +111,6 @@ def run_rfv():
     final['mensagem'] = final['rfv_segment'].apply(suggested_message)
     final['snapshot_date'] = today
 
-    # ✅ Create WhatsApp link
-    final['whatsapp_link'] = final['whatsapp'].apply(
-        lambda x: f"https://wa.me/55{x}" if pd.notnull(x) and x != "" else ""
-    )
 
     final.columns = [c.lower().strip() for c in final.columns]
 
