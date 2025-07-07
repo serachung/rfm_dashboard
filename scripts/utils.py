@@ -3,7 +3,6 @@ import os
 import re
 import pandas as pd 
 import gspread
-import json
 from io import BytesIO
 from google.oauth2 import service_account
 import streamlit as st
@@ -12,17 +11,27 @@ from google.oauth2.service_account import Credentials
 
 # 🔐 Authenticate to Google Sheets
 def get_google_sheet():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
-        creds = service_account.Credentials.from_service_account_file(
-            os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=scopes)
+    scopes = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    # ⚙️ Ambiente local: usar arquivo JSON
+    json_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    sheet_url = os.getenv("GOOGLE_SHEET_URL")
+
+    if json_file and os.path.exists(json_file):
+        creds = service_account.Credentials.from_service_account_file(json_file, scopes=scopes)
         client = gspread.authorize(creds)
-        sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
+        sheet = client.open_by_url(sheet_url)
+
+    # ☁️ Ambiente cloud (Streamlit Cloud): usar st.secrets
     else:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         client = gspread.authorize(creds)
-        sheet = client.open(st.secrets["SHEET_NAME"]).sheet1    
+        sheet = client.open_by_url(st.secrets["SHEET_URL"])
+
     return sheet
 
 # def get_google_sheet():
