@@ -8,21 +8,36 @@ from io import BytesIO
 from google.oauth2 import service_account
 
 
+# 🔐 Authenticate to Google Sheets
 def get_google_sheet():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
         creds = service_account.Credentials.from_service_account_file(
-            os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
-            scopes=scopes
-        )
+            os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
     else:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
-            scopes=scopes
-        )
-    client = gspread.authorize(creds)
-    sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open(st.secrets["SHEET_NAME"]).sheet1    
     return sheet
+
+# def get_google_sheet():
+#     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+#     if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
+#         creds = service_account.Credentials.from_service_account_file(
+#             os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
+#             scopes=scopes
+#         )
+#     else:
+#         creds = service_account.Credentials.from_service_account_info(
+#             json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
+#             scopes=scopes
+#         )
+#     client = gspread.authorize(creds)
+#     sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
+#     return sheet
 
 
 def clean_phone_number(phone):
