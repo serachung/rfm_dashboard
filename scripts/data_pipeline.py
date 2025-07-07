@@ -12,6 +12,11 @@ from scripts.utils import get_google_sheet, clean_phone_number
 from requests.auth import HTTPBasicAuth
 import streamlit as st
 
+from google.oauth2.service_account import Credentials
+import gspread
+import streamlit as st
+
+
 
 load_dotenv("config/.env")
 
@@ -21,11 +26,13 @@ def get_google_sheet():
     if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
         creds = service_account.Credentials.from_service_account_file(
             os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"), scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
     else:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")), scopes=scopes)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open(st.secrets["SHEET_NAME"]).sheet1    
     return sheet
 
 # 📅 Get last order date from "Pedidos" sheet
