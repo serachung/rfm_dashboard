@@ -17,33 +17,32 @@ load_dotenv(dotenv_path=os.path.join("config", ".env"))
 
 # 🔐 Authenticate to Google Sheets
 def get_google_sheet():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets"
-        # "https://www.googleapis.com/auth/drive"
-    ]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 
-    # 💻 LOCAL: carregar do .env e usar o arquivo
-    if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"):
-        # carregar variáveis de config/.env
+    # ☁️ CLOUD
+    if "gcp_service_account" in st.secrets:
+        creds = service_account.Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]),
+            scopes=scopes
+        )
+        sheet_url = st.secrets["SHEET_URL"]
+        client = gspread.authorize(creds)
+        return client.open_by_url(sheet_url)
+
+    # 💻 LOCAL
+    elif os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"):
         json_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
         sheet_url = os.getenv("GOOGLE_SHEET_URL")
         creds = service_account.Credentials.from_service_account_file(
             json_path, scopes=scopes
         )
         client = gspread.authorize(creds)
-        print("\n\nOPCAO 1 ",json_path, "\n", sheet_url, "\n\nCREDS:\n",creds, client,client.open_by_url(sheet_url) )
         return client.open_by_url(sheet_url)
 
-    # ☁️ CLOUD: carregar do st.secrets
     else:
-        creds = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=scopes
-        )
-        print(service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"]))
-        
-        client = gspread.authorize(creds)
-        return client.open_by_url(st.secrets["SHEET_URL"])
+        st.error("❌ Credenciais do Google não encontradas.")
+        st.stop()
+
 
 # def get_google_sheet():
 #     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
