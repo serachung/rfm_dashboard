@@ -2,25 +2,21 @@
 import re
 import json
 import gspread
-
 import pandas as pd 
 import streamlit as st
-
 from io import BytesIO
 from google.oauth2 import service_account
 from dotenv import load_dotenv
 import os
 
-load_dotenv(dotenv_path=os.path.join("config", ".env"))
+# ✅ Carrega variáveis locais do .env (sem efeito no Streamlit Cloud)
 
-# 👇 carregando o .env da pasta config
-
-# 🔐 Authenticate to Google Sheets
+# 🔐 Autenticação com Google Sheets (funciona no Cloud e local)
 def get_google_sheet():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 
-    # ☁️ CLOUD
-    if "gcp_service_account" in st.secrets:
+    # ☁️ STREAMLIT CLOUD – tenta primeiro
+    try:
         creds = service_account.Credentials.from_service_account_info(
             dict(st.secrets["gcp_service_account"]),
             scopes=scopes
@@ -28,10 +24,13 @@ def get_google_sheet():
         sheet_url = st.secrets["SHEET_URL"]
         client = gspread.authorize(creds)
         return client.open_by_url(sheet_url)
+    except Exception as cloud_error:
+        print("⚠️ Falha ao carregar via st.secrets:", cloud_error)
 
-    # 💻 LOCAL
-    elif os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"):
-        json_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    # 💻 LOCAL – tenta se o JSON realmente existir
+    load_dotenv(dotenv_path=os.path.join("config", ".env"))
+    json_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if json_path and os.path.exists(json_path):
         sheet_url = os.getenv("GOOGLE_SHEET_URL")
         creds = service_account.Credentials.from_service_account_file(
             json_path, scopes=scopes
@@ -39,32 +38,11 @@ def get_google_sheet():
         client = gspread.authorize(creds)
         return client.open_by_url(sheet_url)
 
-    else:
-        st.error("❌ Credenciais do Google não encontradas.")
-        st.stop()
+    # 🚨 Falhou em tudo
+    st.error("❌ Nenhuma credencial válida encontrada.")
+    st.stop()
 
-
-# def get_google_sheet():
-#     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-#     if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE").endswith(".json"):
-#         creds = service_account.Credentials.from_service_account_file(
-#             os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"),
-#             scopes=scopes
-#         )
-#     else:
-#         creds = service_account.Credentials.from_service_account_info(
-#             json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")),
-#             scopes=scopes
-#         )
-#     client = gspread.authorize(creds)
-#     sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
-
-#     print("ENV JSON path:", os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"))
-#     print("ENV Sheet URL:", os.getenv("GOOGLE_SHEET_URL"))
-
-#     return sheet
-
-
+# 📞 Formatação de telefone
 def clean_phone_number(phone):
     if not phone:
         return None
@@ -77,6 +55,7 @@ def clean_phone_number(phone):
         return f"+55{phone[:2]}9{phone[2:]}"
     return None
 
+# 💬 Mensagens sugeridas por segmento RFV
 def suggested_message(segment):
     messages = {
         'Campeões': 'Agradecimento e oferta VIP',
@@ -93,15 +72,14 @@ def suggested_message(segment):
     }
     return messages.get(segment, '')
 
-
-# ✅ Excel Export
+# 📥 Exporta DataFrame como Excel
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='RFV')
     return output.getvalue()
 
-
+# 📊 Carrega nomes das vendedoras do Google Sheet
 def get_seller_names():
     sheet = get_google_sheet()
     try:
@@ -114,11 +92,7 @@ def get_seller_names():
         print(f"⚠️ Erro ao carregar 'Vendedoras': {e}")
         return [], []
 
-
-
-
-
-
+# 📆 Data relativa (dias, meses, anos)
 def relative_date(date):
     today = pd.Timestamp.today()
 
