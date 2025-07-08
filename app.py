@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 import plotly.express as px
-
 from dotenv import load_dotenv
+import os
+
 from pathlib import Path
 from datetime import datetime
 from gspread_dataframe import set_with_dataframe
@@ -18,7 +19,8 @@ st.title("📦 RFV Snapshot - Incentive")
 
 
 # ✅ Load environment
-load_dotenv(dotenv_path=Path("config/.env"))
+load_dotenv(dotenv_path=os.path.join("config", ".env"))
+# load_dotenv(dotenv_path=Path("config/.env"))
 
 # ✅ Login
 st.title("🔐 Login")

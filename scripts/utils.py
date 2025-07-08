@@ -1,38 +1,49 @@
 # Utility functions
-import os
 import re
-import pandas as pd 
+import json
 import gspread
-from io import BytesIO
-from google.oauth2 import service_account
+
+import pandas as pd 
 import streamlit as st
 
-from google.oauth2.service_account import Credentials
+from io import BytesIO
+from google.oauth2 import service_account
+from dotenv import load_dotenv
+import os
+
+load_dotenv(dotenv_path=os.path.join("config", ".env"))
+
+# 👇 carregando o .env da pasta config
 
 # 🔐 Authenticate to Google Sheets
 def get_google_sheet():
     scopes = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/spreadsheets"
+        # "https://www.googleapis.com/auth/drive"
     ]
 
-    # ⚙️ Ambiente local: usar arquivo JSON
-    json_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
-    sheet_url = os.getenv("GOOGLE_SHEET_URL")
-
-    if json_file and os.path.exists(json_file):
-        creds = service_account.Credentials.from_service_account_file(json_file, scopes=scopes)
+    # 💻 LOCAL: carregar do .env e usar o arquivo
+    if os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"):
+        # carregar variáveis de config/.env
+        json_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+        sheet_url = os.getenv("GOOGLE_SHEET_URL")
+        creds = service_account.Credentials.from_service_account_file(
+            json_path, scopes=scopes
+        )
         client = gspread.authorize(creds)
-        sheet = client.open_by_url(sheet_url)
+        print("\n\nOPCAO 1 ",json_path, "\n", sheet_url, "\n\nCREDS:\n",creds, client,client.open_by_url(sheet_url) )
+        return client.open_by_url(sheet_url)
 
-    # ☁️ Ambiente cloud (Streamlit Cloud): usar st.secrets
+    # ☁️ CLOUD: carregar do st.secrets
     else:
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        creds = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"], scopes=scopes
+        )
+        print(service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"]))
+        
         client = gspread.authorize(creds)
-        sheet = client.open_by_url(st.secrets["SHEET_URL"])
-
-    return sheet
+        return client.open_by_url(st.secrets["SHEET_URL"])
 
 # def get_google_sheet():
 #     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -48,6 +59,10 @@ def get_google_sheet():
 #         )
 #     client = gspread.authorize(creds)
 #     sheet = client.open_by_url(os.getenv("GOOGLE_SHEET_URL"))
+
+#     print("ENV JSON path:", os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE"))
+#     print("ENV Sheet URL:", os.getenv("GOOGLE_SHEET_URL"))
+
 #     return sheet
 
 
