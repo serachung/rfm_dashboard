@@ -1,0 +1,7 @@
+# .gitignore
+config/service_account.json
+*.json  # optional: ignore all JSON files
+
+config/service_account.json
+*.pyc
+__pycache__/
