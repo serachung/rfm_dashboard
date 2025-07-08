@@ -1,12 +1,18 @@
-# .gitignore
-config/service_account.json
-*.json  # optional: ignore all JSON files
+# Virtual environment
+venv/
 
-config/service_account.json
-*.pyc
+# Python cache
 __pycache__/
+*.pyc
+
+# Secrets and configs
+config/
+.streamlit/secrets.toml
 .env
-.env
+*.json  # optional: ignore all JSON files
+config/service_account.json
 .env
 config/.env
-.streamlit/secrets.toml
+
+# OS files
+.DS_Store
